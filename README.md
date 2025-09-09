@@ -20,9 +20,9 @@ Task-4 (I2C translator)/
 
 ---
 
-**Contact**
-Yash Siddhapura
-📞 Phone: +91-7284985820
-✉️ Email: siddhapurayash09@gmail.com
-🎓 College: LD College of Engineering
-🔗 LinkedIn: https://www.linkedin.com/in/siddhapurayash/
+**Contact** <br>
+Yash Siddhapura <br> 
+📞 Phone: +91-7284985820 <br>
+✉️ Email: siddhapurayash09@gmail.com <br>
+🎓 College: LD College of Engineering <br>
+🔗 LinkedIn: https://www.linkedin.com/in/siddhapurayash/ <br>
