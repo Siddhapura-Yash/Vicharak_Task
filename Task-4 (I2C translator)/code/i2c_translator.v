@@ -6,7 +6,8 @@ module i2c_translator(input master_clk,
                   inout slave1_data,
                   //slave 2
                   output slave2_clk,
-                  inout slave2_data);
+                  inout slave2_data,
+                    output reg busy = 0);
   
   localparam SLAVE1_ADDR = 7'b1111000;
   localparam SLAVE2_ADDR = 7'b1111000;
@@ -14,8 +15,11 @@ module i2c_translator(input master_clk,
   localparam LOGICAL_ADDR = 7'b1111111; //for slave 2
   
   //FSM States
-  parameter READ_ADDR = 4'd0,SEND_ACK_1 = 4'd1, LOGICAL_DATA_TRANS = 4'd2, SEND_ACK_2 = 4'd3, DATA_TRANS = 4'd4, SEND_DATA_TO_SLAVE = 4'd5, SLAVE_START = 4'd6, SEND_ADDR = 4'd7, RECEIVE_ACK = 4'd8, DATA_SEND_TO_SLAVE2 = 4'd9,RECEIVE_ACK_2 = 4'd10,READ_ACK_2 = 4'd11;
+  parameter READ_ADDR = 4'd0,SEND_ACK_1 = 4'd1, LOGICAL_DATA_TRANS = 4'd2, SEND_ACK_2 = 4'd3, DATA_TRANS = 4'd4, SEND_DATA_TO_SLAVE = 4'd5, SLAVE_START = 4'd6, SEND_ADDR = 4'd7, RECEIVE_ACK = 4'd8, DATA_SEND_TO_SLAVE2 = 4'd9,RECEIVE_ACK_2 = 4'd10,READ_ACK_2 = 4'd11,SEND_ACK = 4'd12, WRITE_TO_MASTER = 4'd13,SEND_TRANS_ACK_2 = 4'd14;
   
+  reg slave_choose = 0;
+  reg [7:0]normal_data_in = 0;
+  reg [7:0]master_sda_data;
   reg master_slave = 0;
   reg slave1_sda;
   reg slave1_sda_enable;
@@ -67,7 +71,7 @@ module i2c_translator(input master_clk,
       
       case(state) 
         
-        READ_ADDR : begin
+        READ_ADDR : begin 
           if(count == 0) begin
             sda_enable_2 <= 1;
             rw <= master_sda;	//last bit is R/W
@@ -88,14 +92,17 @@ module i2c_translator(input master_clk,
           end
           else if(addr == SLAVE1_ADDR)begin
             state <= DATA_TRANS;
+            saved_addr <= {SLAVE2_ADDR,rw};
             count <=7;
+            slave_choose <= 1;
           end
         end
         
         //In normal operation translator should become transparent
         DATA_TRANS : begin
           if(!rw) begin		//if master writing
-            slave1_sda <= master_sda; //receive data
+//             slave1_sda <= master_sda; //receive data
+            normal_data_in[count] <= master_sda;
             if(count == 0) begin
               state <= SEND_ACK_2;
             count <= 7;
@@ -116,16 +123,15 @@ module i2c_translator(input master_clk,
             data_in[count] <= master_sda; //receive data
             if(count == 0) begin
                state <= SEND_ACK_2; 
-              $monitor(" [119] received data in translator = %b",data_in);	//Store data in buffer 
+//               $monitor(" [119] received data in translator = %b",data_in);	//Store data in buffer 
             end
             else
               count <= count - 1;
           end
           else begin	//if master reading and slave writing
-            if(count == 0)
-              state <= READ_ADDR;	//after receiving successfully go to first step
-            else
-              count <= count - 1;
+            state <= SEND_DATA_TO_SLAVE;
+                      master_slave <= 1;
+
           end
         end
         
@@ -140,7 +146,7 @@ module i2c_translator(input master_clk,
         
         
         //After this master will send data to slave2 for logical address
-        SEND_DATA_TO_SLAVE : begin		//in this state scl and sda should be high of slave2
+        SEND_DATA_TO_SLAVE : begin 		//in this state scl and sda should be high of slave2
           if(master_slave == 1) begin
             state <= SLAVE_START;
             master_slave <= 0;
@@ -148,10 +154,18 @@ module i2c_translator(input master_clk,
         end
         
         SLAVE_START : begin		//in this state start signal should be send to the slave2
-          state <= SEND_ADDR;
+          if(slave_choose == 1) begin		//satisfies during normal operation
+            state <= SEND_ADDR;
+           slave1_sda <=0;
+          slave1_sda_enable<=1;
+          count <= 7;
+          end
+          else begin
+            state <= SEND_ADDR;
            slave2_sda <=0;
           slave2_sda_enable<=1;
           count <= 7;
+            end
         end
         
         SEND_ADDR : begin		//send addre to the slave2
@@ -164,17 +178,31 @@ module i2c_translator(input master_clk,
         end
         
         RECEIVE_ACK : begin
-          if(slave2_data == 0) begin //receive ACK from slave2 
-            $display("[168] Receiving ACK after addr matching = %b",slave2_data);		//getting ACK = 0 means address match
+          if(slave_choose == 1) begin
+            if(slave1_data == 0) begin //receive ACK from slave2 
+//             $display("[168] Receiving ACK after addr matching = %b",slave2_data);		//getting ACK = 0 means address match
+          state <= DATA_SEND_TO_SLAVE2;
+          count <= 7; end
+          else
+            state <= SEND_DATA_TO_SLAVE; end
+         
+          else begin
+            if(slave2_data == 0) begin //receive ACK from slave2 
           state <= DATA_SEND_TO_SLAVE2;
           count <= 7; end
           else
             state <= SEND_DATA_TO_SLAVE;
+          end
         end
         
         DATA_SEND_TO_SLAVE2 : begin		//in this data should be send to slave2 if ack is 0
           if(saved_addr[0]) begin 		//master reading
-//            logic for reading from slave remaining
+            master_sda_data[count] <= slave2_data; 
+            if(count == 0)
+                state <= SEND_TRANS_ACK_2;
+              else 
+                count <= count - 1;
+            
           end
             else begin 			//writing
               if(count == 0) begin			//program stuck here count not getting equal to 0
@@ -188,13 +216,40 @@ module i2c_translator(input master_clk,
           
         end
         
+        SEND_TRANS_ACK_2 : begin
+          state <= WRITE_TO_MASTER;
+          count <= 7;
+        end
+        
+        WRITE_TO_MASTER : begin
+           if(count == 0)
+                state <= SEND_ACK;
+              else 
+                count <= count - 1;
+        end
+        
+        
+        SEND_ACK : begin
+          state <= READ_ADDR; 
+        end
+        
         
         RECEIVE_ACK_2 : begin	//in this ACK should be receive from slave2 then jump to read adder from master
-          if(slave2_data == 0) begin
+          if(slave_choose == 1) begin
+            if(slave1_data == 0) begin
+          state <= SEND_DATA_TO_SLAVE;
+          end
+          else
+            state <= SEND_DATA_TO_SLAVE; end
+          
+          else begin
+            if(slave2_data == 0) begin
           state <= READ_ADDR;
           end
           else
-            state <= SEND_DATA_TO_SLAVE;
+            state <= SEND_DATA_TO_SLAVE; 
+          end
+          
         end          
           
       endcase
@@ -224,7 +279,8 @@ module i2c_translator(input master_clk,
           sda_enable <= 1;	//send ACK
         end
         else 
-          sda_enable <= 0;	//else NACK
+          sda_enable <= 1;
+          sda_out <= 0; 	//else NACK
       end
       
        DATA_TRANS : begin
@@ -240,6 +296,7 @@ module i2c_translator(input master_clk,
         else begin
           sda_out <= slave2_sda;	//send data bit to master
           sda_enable <= 1;
+            sda_enable_2 <= 1;
         end
       end
       
@@ -255,36 +312,89 @@ module i2c_translator(input master_clk,
       
       
       SEND_DATA_TO_SLAVE : begin
-        slave2_sda_enable <= 1;
-        slave2_sda <= 1;
+        if(slave_choose == 1) begin
+        slave1_sda_enable <= 1;
+          slave1_sda <= 1; end
+        else begin
+          slave2_sda_enable <= 1;
+          slave2_sda <= 1; end
       end
       
       SLAVE_START : begin
+        if(slave_choose == 1) begin
         sda_enable <= 1;
-        slave2_sda <= 0;
+          slave2_sda <= 0; end
+        else begin
+          sda_enable <= 1;
+          slave2_sda <= 0;
+        end
       end
       
       SEND_ADDR : begin		//send addre to the slave2
-        slave2_sda <= saved_addr[count];
-        slave2_sda_enable <= 1;
+        if(slave_choose == 1) begin
+        slave1_sda <= saved_addr[count];
+          slave1_sda_enable <= 1; end
+        else begin
+            slave2_sda <= saved_addr[count];
+          slave2_sda_enable <= 1;
+        end
         end
       
       RECEIVE_ACK : begin
-        slave2_sda_enable <= 0;
+        if(slave_choose == 1) 
+        slave1_sda_enable <= 0;
+        else 
+          slave2_sda_enable <= 0;
       end
       
        DATA_SEND_TO_SLAVE2 : begin
+         if(slave_choose == 1) begin
          if(saved_addr[0]) begin
+           slave1_sda_enable <= 0;
+         end
+         else begin
+           slave1_sda_enable <= 1;
+           slave1_sda <= normal_data_in[count];
+         end end
+         
+         else begin
+            if(saved_addr[0]) begin
            slave2_sda_enable <= 0;
          end
          else begin
            slave2_sda_enable <= 1;
            slave2_sda <= data_in[count];
-       end
+         end
+         end
       end
       
+      WRITE_TO_MASTER : begin
+        sda_out <= master_sda_data[count];
+        sda_enable <= 1;
+        sda_enable_2 <= 1;
+      end
+      
+      SEND_ACK : begin
+                  slave2_sda <= 0;
+            slave2_sda_enable <= 1; 
+        busy <= 1;
+      end
+      
+      SEND_ACK_2 : begin
+        slave2_sda <= 0;
+        slave2_sda_enable <= 1;
+      end
+      
+      
       RECEIVE_ACK_2 : begin
+        if(slave_choose == 1) begin
+        slave1_sda_enable <= 0;
+          busy <= 1; end
+        else begin
+          begin
         slave2_sda_enable <= 0;
+          busy <= 1; end
+        end
       end
         
 
@@ -297,7 +407,6 @@ module i2c_translator(input master_clk,
       assign slave2_data = (slave2_sda_enable)? slave2_sda : 'bz;
   assign slave1_clk = (scl_enable) ? i2c_clk : 1'b1;
   assign slave2_clk = (scl_enable) ? i2c_clk : 1'b1;
-
     
   
 endmodule
