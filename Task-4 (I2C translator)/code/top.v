@@ -29,7 +29,7 @@ module top(input clk,
                     .enable(enable),
                     .rw(rw),
                     .data_out(data_out),
-                    .busy(busy),
+//                     .busy(busy),
                     .scl(i2c_clk),//common for all
                     .sda(sda));
   
@@ -38,6 +38,6 @@ module top(input clk,
   i2c_slave slave2(.scl(slave2_clk),.sda(slave2_data_line));
   
   //instantiate translator
-  i2c_translator translator(.master_clk(i2c_clk),.i2c_clk(i2c_clk),.master_sda(sda),.slave1_clk(slave1_clk),.slave1_data(slave1_data_line),.slave2_clk(slave2_clk),.slave2_data(slave2_data_line));
+  i2c_translator translator(.master_clk(i2c_clk),.i2c_clk(i2c_clk),.master_sda(sda),.slave1_clk(slave1_clk),.slave1_data(slave1_data_line),.slave2_clk(slave2_clk),.slave2_data(slave2_data_line),.busy(busy));
     
 endmodule               
