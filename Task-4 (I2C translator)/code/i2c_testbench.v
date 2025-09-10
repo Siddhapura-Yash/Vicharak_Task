@@ -23,34 +23,46 @@ module i2c_tb;
     
     #1000;
     areset = 0;
+    
+    		//WRITE DATA USING LOGICAL ADDRESS
+    
     addr = 7'b1111111;	//slave addres
     data_in = 8'b10000001;	//data to send
     rw = 0; 	//write
+    
     enable = 1;
-    
-    #20000;
-    enable = 0;
-    
-    wait(!busy);	//wait untill done
     #2000;
-    $monitor($time,"Write on : Slave Address = %b and received data in slave = %b",top_module.translator.addr,top_module.slave2.data_in);
+
+    wait(busy);	//wait untill done
+    #2000;
+    $display($time," Write on : Logical Slave Address = %b and received data in slave2 = %b",addr,top_module.slave2.data_in);
 
 
     
-    addr = 7'b1111000;	//same slave addres
-    rw = 1;		//read
-    enable = 1;
-    #2000;
-    enable = 0;
     
-    wait(!busy);
-    #2000;
-    $monitor($time, "Read complete : Master received = %b",top_module.master.data_out);
+    //WRITE DATA USING PHYSICAL ADDRESS	
+
     
-	#5000;
-    $finish;
+//     addr = 7'b1111000;	//physical address
+//      data_in = 8'b10101010;	//data to send
+//     rw = 0;		
+   
+//     enable = 1;
+//     #20000;
     
+//     wait(busy);
+//     #2000;
+ 
+//     $display($time, " Write on : Physical Slave Address = %b and received data in slave1 = %b",addr,top_module.slave1.data_in);
+    
+    
+    
+//     NOTE : (ONLY ONE OPERATION AT ONCE SO MAKE COMMENT ANOTHER BLCOK)
+    
+	#1000;
+    $finish;  
   end
+
   
   initial begin
     $dumpfile("dump.vcd");
